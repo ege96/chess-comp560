@@ -1,6 +1,8 @@
 import sys
+import argparse
 from src.game.chess_game import Game, GameStatus
 from src.engine.minimax import MinimaxEngine
+from src.engine.mcts import MCTSEngine
 from src.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -13,13 +15,28 @@ def print_board(board):
 
 def main():
     """Main function to run the chess game."""
-    # Initialize game and engine
+    # Parse command-line arguments for engine selection and parameters
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--engine', choices=['minimax','mcts'], default='minimax', help='Engine type to use')
+    parser.add_argument('--depth', type=int, default=3, help='Max depth for minimax engine')
+    parser.add_argument('--iterations', type=int, default=1000, help='Max iterations for MCTS engine')
+    parser.add_argument('--playout', type=int, default=100, help='Max moves per playout for MCTS engine')
+    args = parser.parse_args()
+
+    # Initialize game
     game = Game()
-    engine_depth = 3  # Adjust based on desired difficulty
-    engine = MinimaxEngine(max_depth=engine_depth)
-    
-    print("Welcome to Chess with MinimaxEngine!")
-    print(f"Engine is using Minimax with alpha-beta pruning (depth: {engine_depth})")
+
+    # Initialize selected engine
+    if args.engine == 'minimax':
+        engine = MinimaxEngine(max_depth=args.depth)
+        engine_desc = f"Minimax with alpha-beta pruning (depth: {args.depth})"
+    else:
+        # Initialize MCTS engine with iteration and playout limits
+        engine = MCTSEngine(max_iterations=args.iterations, max_playout_moves=args.playout)
+        engine_desc = f"Monte Carlo Tree Search (iterations: {args.iterations}, playout limit: {args.playout})"
+
+    print(f"Welcome to Chess with {args.engine.title()}Engine!")
+    print(f"Engine is using {engine_desc}")
     print("You play as White, engine plays as Black")
     print("Enter moves in UCI format (e.g., 'e2e4')")
     print("Type 'quit' to exit, 'help' for commands")

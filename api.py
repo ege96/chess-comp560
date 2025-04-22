@@ -10,7 +10,8 @@ from pydantic import BaseModel # Import BaseModel
 # Add src directory to Python path to allow engine import
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 
-from src.engine.minimax import MinimaxEngine # Import the engine
+from src.engine.minimax import MinimaxEngine
+from src.engine.mcts import MCTSEngine
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,8 +46,9 @@ app.add_middleware(
 # For simplicity, we'll manage a single global game board.
 board = chess.Board()
 
-# Instantiate the engine (adjust depth as needed)
-engine = MinimaxEngine(max_depth=3)
+# Instantiate engines with default parameters
+minimax_engine = MinimaxEngine(max_depth=3)
+mcts_engine = MCTSEngine()
 
 # Define request body model
 class MoveRequest(BaseModel):
@@ -118,10 +120,15 @@ async def make_engine_move(request: MoveRequest):
                  "winner": "white" if outcome and outcome.winner == chess.WHITE else ("black" if outcome and outcome.winner == chess.BLACK else None)
              }
 
-        # It's engine's turn. Get the best move from the engine.
-        # TODO: Potentially select engine based on request.engine if more are added
-        logger.info(f"Calculating engine move for { 'White' if board.turn == chess.WHITE else 'Black'}...")
-        best_move_uci = engine.get_best_move(board)
+        # It's engine's turn. Select engine based on request.engine
+        if request.engine.lower() == 'mcts':
+            engine_to_use = mcts_engine
+        elif request.engine.lower() == 'minimax':
+            engine_to_use = minimax_engine
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown engine: {request.engine}")
+        logger.info(f"Calculating engine move for {'White' if board.turn == chess.WHITE else 'Black'} using {request.engine} engine")
+        best_move_uci = engine_to_use.get_best_move(board)
         logger.info(f"Engine ({request.engine}) calculated move: {best_move_uci}")
 
         if not best_move_uci or best_move_uci == "0000":

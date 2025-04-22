@@ -4,7 +4,7 @@ import { Chessboard } from 'react-chessboard';
 import './App.css';
 
 // Types for the supported engines
-export type Engine = 'minimax' | 'montecarlo';
+export type Engine = 'minimax' | 'mcts';
 
 // Change this via Vite env var when you deploy
 const API_BASE: string = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
@@ -162,9 +162,7 @@ const ChessApp: React.FC = () => {
           onChange={(e) => setEngine(e.target.value as Engine)}
         >
           <option value="minimax">minimax</option>
-          <option value="montecarlo" disabled>
-            montecarlo (coming soon)
-          </option>
+          <option value="mcts">mcts (Monte Carlo Tree Search)</option>
         </select>
 
         <button onClick={resetGame}>Reset</button>
