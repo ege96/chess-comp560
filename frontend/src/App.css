@@ -1,3 +1,8 @@
+body {
+  display: flex;
+  justify-content: center;
+}
+
 .app {
   display: flex;
   flex-direction: column;
@@ -5,11 +10,13 @@
   gap: 1rem;
   padding: 1rem;
   font-family: sans-serif;
+  justify-content: center;
 }
 
 .controls {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
 }
 
@@ -17,6 +24,11 @@
 .controls button {
   padding: 0.25rem 0.5rem;
   font-size: 1rem;
+}
+
+.board {
+  display: flex;
+  justify-content: center;
 }
 
 .message {

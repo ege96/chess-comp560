@@ -170,12 +170,14 @@ const ChessApp: React.FC = () => {
         <button onClick={resetGame}>Reset</button>
       </div>
 
+      <div className="board">
       <Chessboard
         position={fen}
         onPieceDrop={onDrop}
         boardWidth={480}
         arePiecesDraggable={!isThinking && !game.isGameOver()}
       />
+      </div>
 
       <p className="message">{message}</p>
     </div>
