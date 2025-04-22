@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import chess
-from src.logger import setup_logger, log_execution_time
+from logger import setup_logger, log_execution_time
 
 logger = setup_logger(__name__)
 

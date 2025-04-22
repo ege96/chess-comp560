@@ -1,4 +1,4 @@
-from src.engine.BaseEngine import BaseEngine
+from engine.BaseEngine import BaseEngine
 import chess
 from typing import Tuple, Optional
 
