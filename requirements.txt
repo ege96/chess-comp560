@@ -1,1 +1,3 @@
 python-chess
+fastapi
+uvicorn[standard]
