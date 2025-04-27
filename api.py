@@ -11,6 +11,7 @@ from pydantic import BaseModel # Import BaseModel
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
 
 from src.engine.minimax import MinimaxEngine # Import the engine
+from src.engine.bitboard import BitboardEngine
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,8 +46,13 @@ app.add_middleware(
 # For simplicity, we'll manage a single global game board.
 board = chess.Board()
 
-# Instantiate the engine (adjust depth as needed)
-engine = MinimaxEngine(max_depth=3)
+# Instantiate the engines (adjust depth as needed)
+engine_map = {
+    'minimax': MinimaxEngine(max_depth=3),
+    'bitboard': BitboardEngine(max_depth=3),
+}
+def get_engine(engine_name: str):
+    return engine_map.get(engine_name.lower(), engine_map['minimax'])
 
 # Define request body model
 class MoveRequest(BaseModel):
@@ -56,7 +62,11 @@ class MoveRequest(BaseModel):
 @app.get("/")
 async def read_root():
     """Root endpoint providing basic information about the API."""
-    return {"message": "Welcome to the Chess Engine API!"}
+    return {
+        "message": "Welcome to the Chess Engine API!",
+        "available_engines": list(engine_map.keys()),
+        "default_engine": "minimax"
+    }
 
 @app.post("/new_game", status_code=201)
 async def new_game():
@@ -118,9 +128,9 @@ async def make_engine_move(request: MoveRequest):
                  "winner": "white" if outcome and outcome.winner == chess.WHITE else ("black" if outcome and outcome.winner == chess.BLACK else None)
              }
 
-        # It's engine's turn. Get the best move from the engine.
-        # TODO: Potentially select engine based on request.engine if more are added
-        logger.info(f"Calculating engine move for { 'White' if board.turn == chess.WHITE else 'Black'}...")
+        # It's engine's turn. Get the best move from the selected engine.
+        engine = get_engine(request.engine)
+        logger.info(f"Calculating engine move for { 'White' if board.turn == chess.WHITE else 'Black'} using {request.engine}...")
         best_move_uci = engine.get_best_move(board)
         logger.info(f"Engine ({request.engine}) calculated move: {best_move_uci}")
 

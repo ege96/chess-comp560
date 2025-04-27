@@ -1,6 +1,12 @@
 import sys
+import os
+
+# Ensure src is in the path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+
 from src.game.chess_game import Game, GameStatus
 from src.engine.minimax import MinimaxEngine
+from src.engine.bitboard import BitboardEngine
 from src.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -13,13 +19,30 @@ def print_board(board):
 
 def main():
     """Main function to run the chess game."""
+    # Engine selection
+    print("Select engine:")
+    print("1. MinimaxEngine (classic)")
+    print("2. BitboardEngine (fast bitboard)")
+    while True:
+        engine_choice = input("Enter 1 or 2: ").strip()
+        if engine_choice == '1':
+            EngineClass = MinimaxEngine
+            engine_name = "MinimaxEngine"
+            break
+        elif engine_choice == '2':
+            EngineClass = BitboardEngine
+            engine_name = "BitboardEngine"
+            break
+        else:
+            print("Invalid choice. Please enter 1 or 2.")
+
     # Initialize game and engine
     game = Game()
-    engine_depth = 3  # Adjust based on desired difficulty
-    engine = MinimaxEngine(max_depth=engine_depth)
+    engine_depth = 6  # Adjust based on desired difficulty
+    engine = EngineClass(max_depth=engine_depth)
     
-    print("Welcome to Chess with MinimaxEngine!")
-    print(f"Engine is using Minimax with alpha-beta pruning (depth: {engine_depth})")
+    print(f"Welcome to Chess with {engine_name}!")
+    print(f"Engine is using {engine_name} with alpha-beta pruning (depth: {engine_depth})")
     print("You play as White, engine plays as Black")
     print("Enter moves in UCI format (e.g., 'e2e4')")
     print("Type 'quit' to exit, 'help' for commands")
