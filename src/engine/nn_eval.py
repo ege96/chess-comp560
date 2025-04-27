@@ -26,13 +26,21 @@ class ChessNet(nn.Module):
             nn.Conv2d(32, 64, 3, padding=1),
             nn.ReLU(),
         )
-        self.fc = nn.Sequential(
+        self.fc_value = nn.Sequential(
             nn.Flatten(),
             nn.Linear(64*8*8, 128),
             nn.ReLU(),
             nn.Linear(128, 1)  # Output: evaluation
         )
+        self.fc_policy = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64*8*8, 128),
+            nn.ReLU(),
+            nn.Linear(128, 4672)  # 4672 is the max number of legal chess moves in python-chess
+        )
 
     def forward(self, x):
         x = self.conv(x)
-        return self.fc(x) 
+        value = self.fc_value(x)
+        policy_logits = self.fc_policy(x)
+        return value, policy_logits 
