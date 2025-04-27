@@ -12,11 +12,6 @@ class BaseEngine(ABC):
         """Get the best move for the given board."""
         pass
     
-    @abstractmethod
-    def get_evaluation(self, board: chess.Board) -> float:
-        """Get the evaluation of the given board."""
-        pass    
-    
     
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
