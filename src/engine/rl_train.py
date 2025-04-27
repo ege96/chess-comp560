@@ -5,9 +5,13 @@ import chess
 import random
 import logging
 import yaml
-from nn_eval import ChessNet, board_to_tensor
-from replay_buffer import ReplayBuffer
 import math
+import time
+import os
+from datetime import datetime
+from torch.cuda.amp import autocast, GradScaler
+from nn_eval import ChessNet, board_to_tensor
+from replay_buffer import PrioritizedReplayBuffer
 
 # Load config
 with open('config.yaml', 'r') as f:
@@ -45,7 +49,8 @@ def select_move(board, model, epsilon=0.1):
         board.push(move)
         tensor = torch.tensor(board_to_tensor(board)).unsqueeze(0).to(DEVICE)
         with torch.no_grad():
-            score = model(tensor).item()
+            score, _ = model(tensor)
+            score = score.item()
         board.pop()
         if (board.turn == chess.WHITE and score > best_score) or (board.turn == chess.BLACK and score < best_score):
             best_score = score
@@ -158,10 +163,28 @@ def mcts_select_move(board, model, simulations=50):
 from chess import Move
 
 def move_to_index(move):
-    # python-chess move indexing: https://github.com/niklasf/python-chess/blob/master/docs/square.rst
-    # We'll use a simple mapping: from_square * 73 + to_square (max 4672 moves)
-    # This is not perfect but works for most cases
-    return move.from_square * 73 + move.to_square
+    """Maps a chess.Move to a unique index for the policy head.
+    Handles promotion moves correctly by encoding the promotion piece type.
+    Total indices: 64*64 (from-to squares) + 64*64*4 (possible promotions from-to-piece) ≈ 4672 max.
+    """
+    from_sq = move.from_square
+    to_sq = move.to_square
+    # Base index for non-promotion moves
+    index = from_sq * 64 + to_sq
+    
+    # Handle promotions
+    if move.promotion is not None:
+        # Add offset based on promotion piece (knight=1, bishop=2, rook=3, queen=4)
+        # We add a large offset to avoid collision with regular moves
+        promotion_offset = {
+            chess.KNIGHT: 0,
+            chess.BISHOP: 1,
+            chess.ROOK: 2,
+            chess.QUEEN: 3
+        }
+        index = 64*64 + from_sq*64*4 + to_sq*4 + promotion_offset[move.promotion]
+    
+    return index
 
 def play_game(model, epsilon=0.1, use_mcts=False, mcts_simulations=50):
     board = chess.Board()
@@ -194,55 +217,194 @@ def play_game(model, epsilon=0.1, use_mcts=False, mcts_simulations=50):
     logger.info(f"Game rewards: {rewards}")
     return states, rewards, next_states, dones, policy_targets
 
+def evaluate_model(model, num_games=10, opponent_model=None, mcts_simulations=25):
+    """Evaluate model performance by playing games against a baseline or random play."""
+    wins, draws, losses = 0, 0, 0
+    
+    for game_idx in range(num_games):
+        board = chess.Board()
+        while not board.is_game_over():
+            # Current model's turn
+            if board.turn == chess.WHITE:
+                move, _ = mcts_select_move(board, model, simulations=mcts_simulations)
+            # Opponent's turn
+            else:
+                if opponent_model:
+                    move, _ = mcts_select_move(board, opponent_model, simulations=mcts_simulations)
+                else:
+                    # Random opponent if no opponent_model
+                    move = random.choice(list(board.legal_moves))
+            board.push(move)
+            
+        # Game result
+        if board.is_checkmate():
+            if board.turn == chess.BLACK:  # WHITE won
+                wins += 1
+            else:  # BLACK won
+                losses += 1
+        else:  # Draw
+            draws += 1
+            
+    return wins, draws, losses
+
+def get_epsilon(episode, config):
+    """Calculate epsilon based on annealing schedule."""
+    start_epsilon = config.get('start_epsilon', 0.5)
+    end_epsilon = config.get('end_epsilon', 0.05)
+    decay_episodes = config.get('epsilon_decay_episodes', 5000)
+    
+    if episode >= decay_episodes:
+        return end_epsilon
+    else:
+        return start_epsilon - (start_epsilon - end_epsilon) * (episode / decay_episodes)
+
 def train():
+    """Main training loop with all improvements."""
+    # Create checkpoint directory
+    checkpoints_dir = config.get('checkpoints_dir', 'checkpoints')
+    os.makedirs(checkpoints_dir, exist_ok=True)
+    
     model = ChessNet().to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
-    buffer = ReplayBuffer(config['replay_buffer_size'])
+    scaler = GradScaler()  # For mixed precision training
+    
+    # Prioritized replay buffer
+    buffer = PrioritizedReplayBuffer(
+        capacity=config['replay_buffer_size'],
+        alpha=config.get('per_alpha', 0.6),
+        beta_start=config.get('per_beta_start', 0.4)
+    )
+    
     batch_size = config['batch_size']
     num_episodes = config['num_episodes']
     use_mcts = config.get('use_mcts', False)
     mcts_simulations = config.get('mcts_simulations', 50)
-
+    
+    # Evaluation settings
+    eval_frequency = config.get('eval_frequency', 500)
+    checkpoint_frequency = config.get('checkpoint_frequency', 1000)
+    
+    # Initialize baseline model (copy of initial model)
+    baseline_model = ChessNet().to(DEVICE)
+    baseline_model.load_state_dict(model.state_dict())
+    baseline_model.eval()
+    
+    # Training metrics
+    best_eval_score = 0
+    episode_rewards = []
+    value_losses = []
+    policy_losses = []
+    
+    start_time = time.time()
+    
     for episode in range(num_episodes):
+        # Epsilon annealing
+        epsilon = get_epsilon(episode, config)
+        
+        # Update beta for PER
+        buffer.update_beta(episode)
+        
+        # Play one episode
         states, rewards, next_states, dones, policy_targets = play_game(
-            model, epsilon=config['epsilon'], use_mcts=use_mcts, mcts_simulations=mcts_simulations)
+            model, epsilon=epsilon, use_mcts=use_mcts, mcts_simulations=mcts_simulations)
+        
+        episode_rewards.append(sum(rewards))
+        
+        # Store experiences in replay buffer
         for s, r, ns, d, pt in zip(states, rewards, next_states, dones, policy_targets):
-            buffer.push(s, r, ns, d)
-
+            buffer.push(s, r, ns, d, pt)
+            
         if len(buffer) < batch_size:
             continue
-
-        # Sample batch
-        state_batch, reward_batch, next_state_batch, done_batch, policy_target_batch = buffer.sample(batch_size)
+            
+        # Sample batch with priorities
+        state_batch, reward_batch, next_state_batch, done_batch, policy_target_batch, indices, weights = buffer.sample(batch_size)
+        
         state_batch = torch.tensor(np.array(state_batch)).to(DEVICE)
         reward_batch = torch.tensor(reward_batch, dtype=torch.float32).to(DEVICE)
         next_state_batch = torch.tensor(np.array(next_state_batch)).to(DEVICE)
         done_batch = torch.tensor(done_batch, dtype=torch.float32).to(DEVICE)
         policy_target_batch = torch.tensor(np.array(policy_target_batch)).to(DEVICE)
-
-        # Compute targets
-        with torch.no_grad():
-            next_values, _ = model(next_state_batch)
-            next_values = next_values.squeeze()
-            targets = reward_batch + (1 - done_batch) * config['discount'] * next_values
-
-        # Compute predictions
-        values, policy_logits = model(state_batch)
-        values = values.squeeze()
-        # Value loss
-        value_loss = torch.nn.functional.mse_loss(values, targets)
-        # Policy loss (cross-entropy with visit distribution)
-        policy_loss = -torch.sum(policy_target_batch * torch.nn.functional.log_softmax(policy_logits, dim=1), dim=1).mean()
-        loss = value_loss + policy_loss
-
+        weights = weights.to(DEVICE)  # Importance sampling weights
+        
+        # Mixed precision training
+        with autocast():
+            # Compute targets
+            with torch.no_grad():
+                next_values, _ = model(next_state_batch)
+                next_values = next_values.squeeze()
+                targets = reward_batch + (1 - done_batch) * config['discount'] * next_values
+                
+            # Compute predictions
+            values, policy_logits = model(state_batch)
+            values = values.squeeze()
+            
+            # Value loss
+            value_loss = torch.nn.functional.mse_loss(values, targets, reduction='none')
+            weighted_value_loss = (value_loss * weights).mean()
+            
+            # Policy loss
+            policy_loss = -torch.sum(policy_target_batch * torch.nn.functional.log_softmax(policy_logits, dim=1), dim=1)
+            weighted_policy_loss = (policy_loss * weights).mean()
+            
+            # Combined loss
+            loss = weighted_value_loss + weighted_policy_loss
+            
+        # Update priorities in replay buffer
+        td_errors = value_loss.detach().cpu().numpy()
+        buffer.update_priorities(indices, td_errors + 1e-6)  # Add small constant for stability
+        
+        # Backward pass with gradient scaling
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        logger.info(f"Episode {episode}, Loss: {loss.item():.4f}")
-
-    torch.save(model.state_dict(), config['model_save_path'])
-    logger.info(f"Model saved to {config['model_save_path']}")
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        
+        # Log metrics
+        value_losses.append(weighted_value_loss.item())
+        policy_losses.append(weighted_policy_loss.item())
+        
+        if episode % 10 == 0:
+            logger.info(f"Episode {episode}, Epsilon: {epsilon:.3f}, Value Loss: {weighted_value_loss:.4f}, "
+                        f"Policy Loss: {weighted_policy_loss:.4f}, Reward: {sum(rewards):.2f}")
+            
+        # Periodic evaluation
+        if episode > 0 and episode % eval_frequency == 0:
+            wins, draws, losses = evaluate_model(model, num_games=10, opponent_model=baseline_model)
+            eval_score = wins + 0.5 * draws
+            logger.info(f"Evaluation after episode {episode}: Wins: {wins}, Draws: {draws}, Losses: {losses}")
+            
+            # Update baseline if current model is better
+            if eval_score > best_eval_score:
+                best_eval_score = eval_score
+                baseline_model.load_state_dict(model.state_dict())
+                logger.info(f"New best model with score {eval_score}!")
+                
+        # Periodic checkpointing
+        if episode > 0 and episode % checkpoint_frequency == 0:
+            checkpoint_path = os.path.join(checkpoints_dir, f"model_ep{episode}.pth")
+            torch.save({
+                'episode': episode,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'value_loss': weighted_value_loss.item(),
+                'policy_loss': weighted_policy_loss.item(),
+                'best_eval_score': best_eval_score
+            }, checkpoint_path)
+            logger.info(f"Checkpoint saved to {checkpoint_path}")
+            
+    # Training complete
+    elapsed_time = time.time() - start_time
+    logger.info(f"Training complete. Total time: {elapsed_time:.2f}s. Episodes: {num_episodes}")
+    
+    # Save final model
+    final_path = config['model_save_path']
+    torch.save(model.state_dict(), final_path)
+    logger.info(f"Final model saved to {final_path}")
+    
+    # Final evaluation
+    wins, draws, losses = evaluate_model(model, num_games=20)
+    logger.info(f"Final evaluation: Wins: {wins}, Draws: {draws}, Losses: {losses}")
 
 if __name__ == "__main__":
     train() 

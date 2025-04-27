@@ -1,12 +1,35 @@
 # RL Chess Engine Training Configuration
+
+# Training hyperparameters
 learning_rate: 0.0001
 batch_size: 128
 num_episodes: 5000
 replay_buffer_size: 10000
-move_penalty: -0.01
-epsilon: 0.2
 discount: 0.99
-model_save_path: chess_rl_model.pth
-log_file: rl_train.log
+
+# Reward shaping
+move_penalty: -0.01
+
+# Exploration parameters
+start_epsilon: 0.5
+end_epsilon: 0.05
+epsilon_decay_episodes: 5000
+epsilon: 0.2  # Used for non-annealing runs
+
+# Prioritized Replay parameters
+use_prioritized_replay: true
+per_alpha: 0.6
+per_beta_start: 0.4
+
+# MCTS parameters
 use_mcts: true
-mcts_simulations: 20 
+mcts_simulations: 20
+
+# Evaluation & checkpointing
+eval_frequency: 500
+checkpoint_frequency: 1000
+checkpoints_dir: "checkpoints"
+
+# Model save/load
+model_save_path: "chess_rl_model.pth"
+log_file: "rl_train.log" 
