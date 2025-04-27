@@ -1,6 +1,8 @@
 from engine.BaseEngine import BaseEngine
 import chess
 from typing import Tuple, Optional, Dict
+import torch
+from engine.nn_eval import ChessNet, board_to_tensor
 
 # Piece Square Tables (Midgame) - values from White's perspective
 # Mirrored vertically for Black
@@ -107,6 +109,9 @@ class MinimaxEngine(BaseEngine):
 
     def __init__(self, max_depth: int = 4):
         self.max_depth = max_depth
+        self.model = ChessNet()
+        self.model.load_state_dict(torch.load("chess_rl_model.pth", map_location="cuda" if torch.cuda.is_available() else "cpu"))
+        self.model.eval()
         # Determine if it's endgame - rough heuristic based on queen count
         # Could be refined further (e.g., total material)
         self.is_endgame_phase = False # Will be updated in get_evaluation
@@ -126,52 +131,13 @@ class MinimaxEngine(BaseEngine):
                  len(board.pieces(chess.KNIGHT, chess.BLACK)) + len(board.pieces(chess.BISHOP, chess.BLACK))
         self.is_endgame_phase = queens == 0 or (queens <= 1 and minors <= 2)
 
-
-        material_score = 0
-        pst_score = 0
-
-        for square in chess.SQUARES:
-            piece = board.piece_at(square)
-            if piece is not None:
-                # Material Score
-                value = self.piece_values[piece.piece_type]
-                material_score += value if piece.color == chess.WHITE else -value
-
-                # Piece-Square Table Score
-                piece_pst = self.pst[piece.piece_type]
-                # Use endgame king table if applicable
-                if piece.piece_type == chess.KING and self.is_endgame_phase:
-                    piece_pst = self.pst_king_endgame
-
-                # Get PST value - mirror index for black pieces
-                pst_val = piece_pst[square] if piece.color == chess.WHITE else piece_pst[mirrored_square(square)]
-                pst_score += pst_val if piece.color == chess.WHITE else -pst_val
-
-
-        # Mobility Score (simple version: count legal moves)
-        # Note: Calculating legal moves can be expensive, use cautiously or find ways to optimize.
-        # This adds a small bonus for having more available moves.
-        board.turn = chess.WHITE # Evaluate mobility from white's perspective
-        white_mobility = board.legal_moves.count()
-        board.turn = chess.BLACK # Evaluate mobility from black's perspective
-        black_mobility = board.legal_moves.count()
-        board.turn = not board.turn # Restore original turn
-
-        # Mobility score contributes less than material/PSTs usually
-        # Scale bonus to avoid overpowering material, e.g., 0.1 per move difference
-        mobility_score = self.MOBILITY_BONUS * (white_mobility - black_mobility)
-
-
-        # Combine scores (adjust weights as needed)
-        total_score = material_score + pst_score + mobility_score
-
-        # Ensure the score is from the perspective of the current player
-        # The minimax function handles maximizing/minimizing based on board.turn
-        # But the raw evaluation should be consistent (e.g. +ve favors White)
-        # return total_score if board.turn == chess.WHITE else -total_score
-        # Let's keep evaluation absolute (positive = white advantage)
-        return total_score
-
+        tensor = torch.tensor(board_to_tensor(board)).unsqueeze(0)
+        if torch.cuda.is_available():
+            tensor = tensor.cuda()
+            self.model.cuda()
+        with torch.no_grad():
+            value = self.model(tensor).item()
+        return value
 
     def minimax(self, board: chess.Board, depth: int, alpha: float, beta: float, maximizing: bool) -> Tuple[float, Optional[chess.Move]]:
         """Minimax algorithm with alpha-beta pruning."""
