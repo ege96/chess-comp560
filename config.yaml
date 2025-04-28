@@ -23,7 +23,7 @@ per_beta_start: 0.4
 
 # MCTS parameters
 use_mcts: false
-mcts_simulations: 20
+mcts_simulations: 10
 
 # Evaluation & checkpointing
 eval_frequency: 500

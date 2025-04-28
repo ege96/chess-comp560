@@ -214,7 +214,6 @@ def play_game(model, epsilon=0.1, use_mcts=False, mcts_simulations=50):
         next_states.append(next_state)
         dones.append(done)
         policy_targets.append(policy_target)
-    logger.info(f"Game rewards: {rewards}")
     return states, rewards, next_states, dones, policy_targets
 
 def evaluate_model(model, num_games=10, opponent_model=None, mcts_simulations=25):
@@ -327,6 +326,10 @@ def train():
         policy_target_batch = torch.tensor(np.array(policy_target_batch)).to(DEVICE)
         weights = weights.to(DEVICE)  # Importance sampling weights
         
+        # Compute predictions OUTSIDE autocast
+        values, policy_logits = model(state_batch)
+        values = values.squeeze()
+
         # Mixed precision training with updated API
         with autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu'):
             # Compute targets
@@ -335,10 +338,7 @@ def train():
                 next_values = next_values.squeeze()
                 targets = reward_batch + (1 - done_batch) * config['discount'] * next_values
                 
-            # Compute predictions
-            values, policy_logits = model(state_batch)
-            values = values.squeeze()
-            
+            # Loss calculations INSIDE autocast
             # Value loss - ensure all tensors require grad
             value_loss = torch.nn.functional.mse_loss(values, targets.detach(), reduction='none')
             weighted_value_loss = (value_loss * weights).mean()
@@ -352,7 +352,7 @@ def train():
             
         # Update priorities in replay buffer
         td_errors = value_loss.detach().cpu().numpy()
-        buffer.update_priorities(indices, td_errors + 1e-6)  # Add small constant for stability
+        buffer.update_priorities(indices, td_errors + 1e-6)
         
         # Backward pass with gradient scaling
         optimizer.zero_grad()
