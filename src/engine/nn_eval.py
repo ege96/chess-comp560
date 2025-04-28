@@ -36,7 +36,7 @@ class ChessNet(nn.Module):
             nn.Flatten(),
             nn.Linear(64*8*8, 128),
             nn.ReLU(),
-            nn.Linear(128, 4672)  # 4672 is the max number of legal chess moves in python-chess
+            nn.Linear(128, 21000)  # Updated to 21000 possible moves (including all promotions)
         )
 
     def forward(self, x):

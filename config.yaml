@@ -3,7 +3,7 @@
 # Training hyperparameters
 learning_rate: 0.0001
 batch_size: 128
-num_episodes: 5000
+num_episodes: 200
 replay_buffer_size: 10000
 discount: 0.99
 
@@ -22,7 +22,7 @@ per_alpha: 0.6
 per_beta_start: 0.4
 
 # MCTS parameters
-use_mcts: true
+use_mcts: false
 mcts_simulations: 20
 
 # Evaluation & checkpointing

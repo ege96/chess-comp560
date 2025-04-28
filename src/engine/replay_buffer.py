@@ -50,8 +50,20 @@ class PrioritizedReplayBuffer:
         else:
             prios = self.priorities[:self.position]
         
+        # Add small constant to avoid zero priority
+        prios = prios + 1e-5
+        
         # Normalized priorities for sampling
-        probs = prios / np.sum(prios)
+        prios_sum = np.sum(prios)
+        if prios_sum == 0:
+            # If all priorities are zero, use uniform sampling
+            probs = np.ones_like(prios) / len(prios)
+        else:
+            probs = prios / prios_sum
+        
+        # Check for NaN and fix (should be redundant with above checks, but safety first)
+        if np.isnan(probs).any():
+            probs = np.ones_like(probs) / len(probs)
         
         # Sample according to priorities
         indices = np.random.choice(len(self.buffer), batch_size, p=probs)

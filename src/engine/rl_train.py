@@ -9,7 +9,7 @@ import math
 import time
 import os
 from datetime import datetime
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from nn_eval import ChessNet, board_to_tensor
 from replay_buffer import PrioritizedReplayBuffer
 
@@ -150,7 +150,7 @@ def mcts_select_move(board, model, simulations=50):
                 value = -value
 
     # Visit count distribution for all legal moves
-    visits = np.zeros(4672, dtype=np.float32)
+    visits = np.zeros(21000, dtype=np.float32)
     for move in root.children:
         idx = move_to_index(move)
         visits[idx] = root.children[move].N
@@ -196,7 +196,7 @@ def play_game(model, epsilon=0.1, use_mcts=False, mcts_simulations=50):
         else:
             move = select_move(board, model, epsilon)
             # Uniform random policy for non-MCTS
-            policy_target = np.zeros(4672, dtype=np.float32)
+            policy_target = np.zeros(21000, dtype=np.float32)
             legal_moves = list(board.legal_moves)
             for m in legal_moves:
                 policy_target[move_to_index(m)] = 1.0
@@ -266,7 +266,7 @@ def train():
     
     model = ChessNet().to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
-    scaler = GradScaler()  # For mixed precision training
+    scaler = GradScaler()  # Updated constructor (defaults to 'cuda' when available)
     
     # Prioritized replay buffer
     buffer = PrioritizedReplayBuffer(
@@ -327,8 +327,8 @@ def train():
         policy_target_batch = torch.tensor(np.array(policy_target_batch)).to(DEVICE)
         weights = weights.to(DEVICE)  # Importance sampling weights
         
-        # Mixed precision training
-        with autocast():
+        # Mixed precision training with updated API
+        with autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu'):
             # Compute targets
             with torch.no_grad():
                 next_values, _ = model(next_state_batch)
@@ -339,8 +339,8 @@ def train():
             values, policy_logits = model(state_batch)
             values = values.squeeze()
             
-            # Value loss
-            value_loss = torch.nn.functional.mse_loss(values, targets, reduction='none')
+            # Value loss - ensure all tensors require grad
+            value_loss = torch.nn.functional.mse_loss(values, targets.detach(), reduction='none')
             weighted_value_loss = (value_loss * weights).mean()
             
             # Policy loss
