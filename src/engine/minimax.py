@@ -1,6 +1,10 @@
-from engine.BaseEngine import BaseEngine
+from .BaseEngine import BaseEngine
 import chess
 from typing import Tuple, Optional, Dict
+import torch
+from ..rl.model import ChessValueNet
+from ..rl.encode import encode_board
+import os
 
 # Piece Square Tables (Midgame) - values from White's perspective
 # Mirrored vertically for Black
@@ -105,14 +109,30 @@ class MinimaxEngine(BaseEngine):
     # Mobility bonus per legal move
     MOBILITY_BONUS = 1
 
-    def __init__(self, max_depth: int = 4):
+    def __init__(self, max_depth: int = 4, use_rl: bool = False, rl_model_path: str = None):
         self.max_depth = max_depth
-        # Determine if it's endgame - rough heuristic based on queen count
-        # Could be refined further (e.g., total material)
         self.is_endgame_phase = False # Will be updated in get_evaluation
+        self.use_rl = use_rl
+        self.rl_model = None
+        self.rl_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if self.use_rl:
+            self.rl_model = ChessValueNet().to(self.rl_device)
+            if rl_model_path is not None and os.path.exists(rl_model_path):
+                self.rl_model.load_state_dict(torch.load(rl_model_path, map_location=self.rl_device))
+                self.rl_model.eval()
 
     def get_evaluation(self, board: chess.Board) -> float:
-        """Evaluate the current board position based on material, piece-square tables, and mobility."""
+        """Evaluate the current board position using RL value net if enabled, else use heuristic."""
+        if self.use_rl and self.rl_model is not None:
+            # Use RL value net
+            arr = encode_board(board)
+            x = torch.tensor(arr, dtype=torch.float32, device=self.rl_device)
+            with torch.no_grad():
+                value = self.rl_model(x)
+            # Convention: positive = white advantage, negative = black
+            return float(value.item())
+
+        # --- Default heuristic below ---
         if board.is_checkmate():
             # Return a large value favoring the side that delivered checkmate
             # Adding depth ensures faster mates are preferred
@@ -126,50 +146,30 @@ class MinimaxEngine(BaseEngine):
                  len(board.pieces(chess.KNIGHT, chess.BLACK)) + len(board.pieces(chess.BISHOP, chess.BLACK))
         self.is_endgame_phase = queens == 0 or (queens <= 1 and minors <= 2)
 
-
         material_score = 0
         pst_score = 0
-
         for square in chess.SQUARES:
             piece = board.piece_at(square)
             if piece is not None:
                 # Material Score
                 value = self.piece_values[piece.piece_type]
                 material_score += value if piece.color == chess.WHITE else -value
-
                 # Piece-Square Table Score
                 piece_pst = self.pst[piece.piece_type]
                 # Use endgame king table if applicable
                 if piece.piece_type == chess.KING and self.is_endgame_phase:
                     piece_pst = self.pst_king_endgame
-
                 # Get PST value - mirror index for black pieces
                 pst_val = piece_pst[square] if piece.color == chess.WHITE else piece_pst[mirrored_square(square)]
                 pst_score += pst_val if piece.color == chess.WHITE else -pst_val
-
-
         # Mobility Score (simple version: count legal moves)
-        # Note: Calculating legal moves can be expensive, use cautiously or find ways to optimize.
-        # This adds a small bonus for having more available moves.
         board.turn = chess.WHITE # Evaluate mobility from white's perspective
         white_mobility = board.legal_moves.count()
         board.turn = chess.BLACK # Evaluate mobility from black's perspective
         black_mobility = board.legal_moves.count()
         board.turn = not board.turn # Restore original turn
-
-        # Mobility score contributes less than material/PSTs usually
-        # Scale bonus to avoid overpowering material, e.g., 0.1 per move difference
         mobility_score = self.MOBILITY_BONUS * (white_mobility - black_mobility)
-
-
-        # Combine scores (adjust weights as needed)
         total_score = material_score + pst_score + mobility_score
-
-        # Ensure the score is from the perspective of the current player
-        # The minimax function handles maximizing/minimizing based on board.turn
-        # But the raw evaluation should be consistent (e.g. +ve favors White)
-        # return total_score if board.turn == chess.WHITE else -total_score
-        # Let's keep evaluation absolute (positive = white advantage)
         return total_score
 
 
