@@ -2,80 +2,83 @@ from engine.BaseEngine import BaseEngine
 import chess
 from typing import Tuple, Optional, Dict
 
-# Piece Square Tables (Midgame) - values from White's perspective
-# Mirrored vertically for Black
-pst_pawn_mg = [
-    0,  0,  0,  0,  0,  0,  0,  0,
-    50, 50, 50, 50, 50, 50, 50, 50,
-    10, 10, 20, 30, 30, 20, 10, 10,
-     5,  5, 10, 25, 25, 10,  5,  5,
-     0,  0,  0, 20, 20,  0,  0,  0,
-     5, -5,-10,  0,  0,-10, -5,  5,
-     5, 10, 10,-20,-20, 10, 10,  5,
-     0,  0,  0,  0,  0,  0,  0,  0
-]
-pst_knight_mg = [
-    -50,-40,-30,-30,-30,-30,-40,-50,
-    -40,-20,  0,  0,  0,  0,-20,-40,
-    -30,  0, 10, 15, 15, 10,  0,-30,
-    -30,  5, 15, 20, 20, 15,  5,-30,
-    -30,  0, 15, 20, 20, 15,  0,-30,
-    -30,  5, 10, 15, 15, 10,  5,-30,
-    -40,-20,  0,  5,  5,  0,-20,-40,
-    -50,-40,-30,-30,-30,-30,-40,-50,
-]
-pst_bishop_mg = [
-    -20,-10,-10,-10,-10,-10,-10,-20,
-    -10,  0,  0,  0,  0,  0,  0,-10,
-    -10,  0,  5, 10, 10,  5,  0,-10,
-    -10,  5,  5, 10, 10,  5,  5,-10,
-    -10,  0, 10, 10, 10, 10,  0,-10,
-    -10, 10, 10, 10, 10, 10, 10,-10,
-    -10,  5,  0,  0,  0,  0,  5,-10,
-    -20,-10,-10,-10,-10,-10,-10,-20,
-]
-pst_rook_mg = [
-     0,  0,  0,  0,  0,  0,  0,  0,
-     5, 10, 10, 10, 10, 10, 10,  5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-     0,  0,  0,  5,  5,  0,  0,  0
-]
-pst_queen_mg = [
-    -20,-10,-10, -5, -5,-10,-10,-20,
-    -10,  0,  0,  0,  0,  0,  0,-10,
-    -10,  0,  5,  5,  5,  5,  0,-10,
-     -5,  0,  5,  5,  5,  5,  0, -5,
-      0,  0,  5,  5,  5,  5,  0, -5,
-    -10,  5,  5,  5,  5,  5,  0,-10,
-    -10,  0,  5,  0,  0,  0,  0,-10,
-    -20,-10,-10, -5, -5,-10,-10,-20
-]
-pst_king_mg = [
-    -30,-40,-40,-50,-50,-40,-40,-30,
-    -30,-40,-40,-50,-50,-40,-40,-30,
-    -30,-40,-40,-50,-50,-40,-40,-30,
-    -30,-40,-40,-50,-50,-40,-40,-30,
-    -20,-30,-30,-40,-40,-30,-30,-20,
-    -10,-20,-20,-20,-20,-20,-20,-10,
-     20, 20,  0,  0,  0,  0, 20, 20,
-     20, 30, 10,  0,  0, 10, 30, 20
-]
+# Sunfish piece values and piece-square tables
+piece = {"P": 100, "N": 280, "B": 320, "R": 479, "Q": 929, "K": 60000}
+pst = {
+    'P': (   0,   0,   0,   0,   0,   0,   0,   0,
+            78,  83,  86,  73, 102,  82,  85,  90,
+             7,  29,  21,  44,  40,  31,  44,   7,
+           -17,  16,  -2,  15,  14,   0,  15, -13,
+           -26,   3,  10,   9,   6,   1,   0, -23,
+           -22,   9,   5, -11, -10,  -2,   3, -19,
+           -31,   8,  -7, -37, -36, -14,   3, -31,
+             0,   0,   0,   0,   0,   0,   0,   0),
+    'N': ( -66, -53, -75, -75, -10, -55, -58, -70,
+            -3,  -6, 100, -36,   4,  62,  -4, -14,
+            10,  67,   1,  74,  73,  27,  62,  -2,
+            24,  24,  45,  37,  33,  41,  25,  17,
+            -1,   5,  31,  21,  22,  35,   2,   0,
+           -18,  10,  13,  22,  18,  15,  11, -14,
+           -23, -15,   2,   0,   2,   0, -23, -20,
+           -74, -23, -26, -24, -19, -35, -22, -69),
+    'B': ( -59, -78, -82, -76, -23,-107, -37, -50,
+           -11,  20,  35, -42, -39,  31,   2, -22,
+            -9,  39, -32,  41,  52, -10,  28, -14,
+            25,  17,  20,  34,  26,  25,  15,  10,
+            13,  10,  17,  23,  17,  16,   0,   7,
+            14,  25,  24,  15,   8,  25,  20,  15,
+            19,  20,  11,   6,   7,   6,  20,  16,
+            -7,   2, -15, -12, -14, -15, -10, -10),
+    'R': (  35,  29,  33,   4,  37,  33,  56,  50,
+            55,  29,  56,  67,  55,  62,  34,  60,
+            19,  35,  28,  33,  45,  27,  25,  15,
+             0,   5,  16,  13,  18,  -4,  -9,  -6,
+           -28, -35, -16, -21, -13, -29, -46, -30,
+           -42, -28, -42, -25, -25, -35, -26, -46,
+           -53, -38, -31, -26, -29, -43, -44, -53,
+           -30, -24, -18,   5,  -2, -18, -31, -32),
+    'Q': (   6,   1,  -8,-104,  69,  24,  88,  26,
+            14,  32,  60, -10,  20,  76,  57,  24,
+            -2,  43,  32,  60,  72,  63,  43,   2,
+             1, -16,  22,  17,  25,  20, -13,  -6,
+           -14, -15,  -2,  -5,  -1, -10, -20, -22,
+           -30,  -6, -13, -11, -16, -11, -16, -27,
+           -36, -18,   0, -19, -15, -15, -21, -38,
+           -39, -30, -31, -13, -31, -36, -34, -42),
+    'K': (   4,  54,  47, -99, -99,  60,  83, -62,
+           -32,  10,  55,  56,  56,  55,  10,   3,
+           -62,  12, -57,  44, -67,  28,  37, -31,
+           -55,  50,  11,  -4, -19,  13,   0, -49,
+           -55, -43, -52, -28, -51, -47,  -8, -50,
+           -47, -42, -43, -79, -64, -32, -29, -32,
+            -4,   3, -14, -50, -57, -18,  13,   4,
+            17,  30,  -3, -14,   6,  -1,  40,  18),
+}
+# Pad tables and join piece and pst dictionaries
+for k, table in pst.items():
+    padrow = lambda row: (0,) + tuple(x + piece[k] for x in row) + (0,)
+    pst[k] = sum((padrow(table[i * 8 : i * 8 + 8]) for i in range(8)), ())
+    pst[k] = (0,) * 20 + pst[k] + (0,) * 20
 
-# Piece Square Tables (Endgame) - King specifically needs different values
-pst_king_eg = [
-    -50,-40,-30,-20,-20,-30,-40,-50,
-    -30,-20,-10,  0,  0,-10,-20,-30,
-    -30,-10, 20, 30, 30, 20,-10,-30,
-    -30,-10, 30, 40, 40, 30,-10,-30,
-    -30,-10, 30, 40, 40, 30,-10,-30,
-    -30,-10, 20, 30, 30, 20,-10,-30,
-    -30,-30,  0,  0,  0,  0,-30,-30,
-    -50,-30,-30,-30,-30,-30,-30,-50
-]
+# Sunfish piece type mapping to python-chess
+PIECE_TYPE_TO_CHAR = {
+    1: 'P',
+    2: 'N',
+    3: 'B',
+    4: 'R',
+    5: 'Q',
+    6: 'K',
+}
+
+# Sunfish piece values for python-chess types
+piece_values = {
+    1: 100,  # Pawn
+    2: 280,  # Knight
+    3: 320,  # Bishop
+    4: 479,  # Rook
+    5: 929,  # Queen
+    6: 60000 # King
+}
 
 # Helper to get mirrored square index
 def mirrored_square(sq):
@@ -83,26 +86,8 @@ def mirrored_square(sq):
 
 class MinimaxEngine(BaseEngine):
     # Make piece values a class attribute
-    piece_values: Dict[chess.PieceType, int] = {
-        chess.PAWN: 100,
-        chess.KNIGHT: 320,
-        chess.BISHOP: 330,
-        chess.ROOK: 500,
-        chess.QUEEN: 900,
-        chess.KING: 20000
-    }
-    # Piece square tables as class attributes
-    pst: Dict[chess.PieceType, list[int]] = {
-        chess.PAWN: pst_pawn_mg,
-        chess.KNIGHT: pst_knight_mg,
-        chess.BISHOP: pst_bishop_mg,
-        chess.ROOK: pst_rook_mg,
-        chess.QUEEN: pst_queen_mg,
-        chess.KING: pst_king_mg # Default to midgame king table
-    }
-    pst_king_endgame = pst_king_eg # Separate endgame table for king
-
-    # Mobility bonus per legal move
+    piece_values: Dict[int, int] = piece_values
+    pst: Dict[str, tuple] = pst
     MOBILITY_BONUS = 1
 
     def __init__(self, max_depth: int = 4):
@@ -134,18 +119,23 @@ class MinimaxEngine(BaseEngine):
             piece = board.piece_at(square)
             if piece is not None:
                 # Material Score
-                value = self.piece_values[piece.piece_type]
-                material_score += value if piece.color == chess.WHITE else -value
+                # Use Sunfish piece values and PSTs
+                pt = piece.piece_type
+                color = piece.color
+                value = self.piece_values[pt]
+                material_score += value if color == chess.WHITE else -value
 
-                # Piece-Square Table Score
-                piece_pst = self.pst[piece.piece_type]
-                # Use endgame king table if applicable
-                if piece.piece_type == chess.KING and self.is_endgame_phase:
-                    piece_pst = self.pst_king_endgame
-
+                # Use Sunfish PSTs
+                char = PIECE_TYPE_TO_CHAR[pt]
+                piece_pst = self.pst[char]
                 # Get PST value - mirror index for black pieces
-                pst_val = piece_pst[square] if piece.color == chess.WHITE else piece_pst[mirrored_square(square)]
-                pst_score += pst_val if piece.color == chess.WHITE else -pst_val
+                if color == chess.WHITE:
+                    pst_val = piece_pst[square + 21]  # Sunfish uses 0-based padding, offset by 21
+                    pst_score += pst_val
+                else:
+                    mirror_sq = 119 - (square + 21)
+                    pst_val = piece_pst[mirror_sq]
+                    pst_score -= pst_val
 
 
         # Mobility Score (simple version: count legal moves)
@@ -188,7 +178,6 @@ class MinimaxEngine(BaseEngine):
             best_move = None
             # Move Ordering: Evaluate captures first (simple heuristic)
             moves = sorted(board.legal_moves, key=lambda move: board.is_capture(move), reverse=True)
-            # for move in board.legal_moves:
             for move in moves:
                 board.push(move)
                 eval, _ = self.minimax(board, depth - 1, alpha, beta, False)
@@ -200,16 +189,13 @@ class MinimaxEngine(BaseEngine):
                 alpha = max(alpha, eval)
                 if beta <= alpha:
                     break # Beta cut-off
-            # Handle case where no move is found (shouldn't happen if not game_over)
             if best_move is None and list(board.legal_moves):
                 best_move = list(board.legal_moves)[0]
             return max_eval, best_move
         else: # Minimizing player
             min_eval = float('inf')
             best_move = None
-            # Move Ordering: Evaluate captures first
             moves = sorted(board.legal_moves, key=lambda move: board.is_capture(move), reverse=True)
-            # for move in board.legal_moves:
             for move in moves:
                 board.push(move)
                 eval, _ = self.minimax(board, depth - 1, alpha, beta, True)
@@ -221,7 +207,6 @@ class MinimaxEngine(BaseEngine):
                 beta = min(beta, eval)
                 if beta <= alpha:
                     break # Alpha cut-off
-            # Handle case where no move is found
             if best_move is None and list(board.legal_moves):
                 best_move = list(board.legal_moves)[0]
             return min_eval, best_move
@@ -239,7 +224,6 @@ class MinimaxEngine(BaseEngine):
         if best_move is None:
             # If minimax returns no move but game isn't over (e.g. stalemate detection failed?)
             # or if only illegal moves were somehow generated, pick first legal if available.
-            # This is defensive coding.
             try:
                 legal_moves = list(board.legal_moves)
                 if legal_moves:

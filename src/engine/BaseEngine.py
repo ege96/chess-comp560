@@ -16,13 +16,3 @@ class BaseEngine(ABC):
     def get_evaluation(self, board: chess.Board) -> float:
         """Get the evaluation of the given board."""
         pass    
-    
-    
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        if 'get_best_move' in cls.__dict__:
-            original = cls.__dict__['get_best_move']
-            wrapped = log_execution_time(logger)(original)
-            setattr(cls, 'get_best_move', wrapped)
-    

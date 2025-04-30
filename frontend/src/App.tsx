@@ -162,9 +162,7 @@ const ChessApp: React.FC = () => {
           onChange={(e) => setEngine(e.target.value as Engine)}
         >
           <option value="minimax">minimax</option>
-          <option value="montecarlo" disabled>
-            montecarlo (coming soon)
-          </option>
+          <option value="montecarlo">montecarlo (MCTS)</option>
         </select>
 
         <button onClick={resetGame}>Reset</button>
