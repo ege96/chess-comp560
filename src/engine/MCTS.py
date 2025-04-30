@@ -1,4 +1,4 @@
-from engine.BaseEngine import BaseEngine
+from .BaseEngine import BaseEngine
 import chess
 import random
 import math

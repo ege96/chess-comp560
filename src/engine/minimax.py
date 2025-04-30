@@ -1,4 +1,4 @@
-from engine.BaseEngine import BaseEngine
+from .BaseEngine import BaseEngine
 import chess
 from typing import Tuple, Optional, Dict
 
